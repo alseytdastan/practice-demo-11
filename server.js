@@ -162,6 +162,14 @@ app.delete("/api/items/:id", async (req, res) => {
   }
 });
 
+// Practice 12 — Version endpoint
+app.get("/version", (req, res) => {
+  res.json({
+    version: "1.1",
+    updatedAt: "2026-01-26"
+  });
+});
+
 // 404 JSON for unknown routes
 app.use((req, res) => {
   res.status(404).json({ status: "error", message: "Route not found" });

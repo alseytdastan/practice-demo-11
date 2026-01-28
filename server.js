@@ -11,8 +11,6 @@ const app = express();
 // Middlewares
 app.use(cors());
 app.use(express.json());
-
-// Serve static files from /public
 app.use(express.static(path.join(__dirname, "public")));
 
 // Env vars
@@ -46,12 +44,12 @@ const Item = mongoose.model("Item", itemSchema);
 
 // Routes
 
-// Homepage (forces index.html)
+// Homepage
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// API info (moved from "/")
+// API info
 app.get("/api", (req, res) => {
   res.json({
     status: "ok",
@@ -61,6 +59,7 @@ app.get("/api", (req, res) => {
       getById: "GET /api/items/:id",
       create: "POST /api/items",
       update: "PUT /api/items/:id",
+      patch: "PATCH /api/items/:id",
       delete: "DELETE /api/items/:id",
     },
   });
@@ -80,17 +79,11 @@ app.get("/api/items", async (req, res) => {
 app.get("/api/items/:id", async (req, res) => {
   try {
     const { id } = req.params;
-
     const item = await Item.findById(id);
-    if (!item) {
-      return res.status(404).json({ status: "error", message: "Item not found" });
-    }
-
+    if (!item) return res.status(404).json({ status: "error", message: "Item not found" });
     res.json({ status: "ok", data: item });
   } catch (err) {
-    if (err.name === "CastError") {
-      return res.status(400).json({ status: "error", message: "Invalid item id" });
-    }
+    if (err.name === "CastError") return res.status(400).json({ status: "error", message: "Invalid item id" });
     res.status(500).json({ status: "error", message: err.message });
   }
 });
@@ -115,30 +108,54 @@ app.post("/api/items", async (req, res) => {
   }
 });
 
-// PUT /api/items/:id
+// PUT /api/items/:id (полное обновление)
 app.put("/api/items/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description } = req.body;
 
-    const update = {};
-    if (typeof name === "string") update.name = name.trim();
-    if (typeof description === "string") update.description = description.trim();
-
-    const updatedItem = await Item.findByIdAndUpdate(id, update, {
-      new: true,
-      runValidators: true,
-    });
-
-    if (!updatedItem) {
-      return res.status(404).json({ status: "error", message: "Item not found" });
+    if (!name || typeof name !== "string" || name.trim().length === 0) {
+      return res.status(400).json({ status: "error", message: "name is required for PUT" });
     }
+
+    const update = {
+      name: name.trim(),
+      description: typeof description === "string" ? description.trim() : "",
+    };
+
+    const updatedItem = await Item.findByIdAndUpdate(id, update, { new: true, runValidators: true });
+
+    if (!updatedItem) return res.status(404).json({ status: "error", message: "Item not found" });
 
     res.json({ status: "ok", message: "Item updated", data: updatedItem });
   } catch (err) {
-    if (err.name === "CastError") {
-      return res.status(400).json({ status: "error", message: "Invalid item id" });
+    if (err.name === "CastError") return res.status(400).json({ status: "error", message: "Invalid item id" });
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// PATCH /api/items/:id (частичное обновление)
+app.patch("/api/items/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const allowedFields = ["name", "description"];
+    const filteredUpdates = {};
+    allowedFields.forEach(field => {
+      if (updates[field] !== undefined) filteredUpdates[field] = updates[field].toString().trim();
+    });
+
+    if (Object.keys(filteredUpdates).length === 0) {
+      return res.status(400).json({ status: "error", message: "No valid fields provided for PATCH" });
     }
+
+    const updatedItem = await Item.findByIdAndUpdate(id, filteredUpdates, { new: true, runValidators: true });
+    if (!updatedItem) return res.status(404).json({ status: "error", message: "Item not found" });
+
+    res.json({ status: "ok", message: "Item partially updated", data: updatedItem });
+  } catch (err) {
+    if (err.name === "CastError") return res.status(400).json({ status: "error", message: "Invalid item id" });
     res.status(500).json({ status: "error", message: err.message });
   }
 });
@@ -147,27 +164,18 @@ app.put("/api/items/:id", async (req, res) => {
 app.delete("/api/items/:id", async (req, res) => {
   try {
     const { id } = req.params;
-
     const deleted = await Item.findByIdAndDelete(id);
-    if (!deleted) {
-      return res.status(404).json({ status: "error", message: "Item not found" });
-    }
-
+    if (!deleted) return res.status(404).json({ status: "error", message: "Item not found" });
     res.json({ status: "ok", message: "Item deleted", data: deleted });
   } catch (err) {
-    if (err.name === "CastError") {
-      return res.status(400).json({ status: "error", message: "Invalid item id" });
-    }
+    if (err.name === "CastError") return res.status(400).json({ status: "error", message: "Invalid item id" });
     res.status(500).json({ status: "error", message: err.message });
   }
 });
 
-// Practice 12 — Version endpoint
+// Version endpoint
 app.get("/version", (req, res) => {
-  res.json({
-    version: "1.1",
-    updatedAt: "2026-01-26"
-  });
+  res.json({ version: "1.1", updatedAt: "2026-01-28" });
 });
 
 // 404 JSON for unknown routes
@@ -175,7 +183,7 @@ app.use((req, res) => {
   res.status(404).json({ status: "error", message: "Route not found" });
 });
 
-// Start
+// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
